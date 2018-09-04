@@ -1,0 +1,72 @@
+#!/bin/bash
+
+LANG="C.UTF-8"
+PYTHON_PIP_VERSION="9.0.1"
+CONFLUENT_MAJOR_VERSION=5
+CONFLUENT_MINOR_VERSION=0
+CONFLUENT_PACKAGES_REPO=https://packages.confluent.io
+
+echo "===> Installing curl wget netcat python...." \
+    && yum install -y \
+                curl \
+                git \
+                wget \
+                nc \
+                python
+
+echo "===> Installing python packages ..."  \
+    && curl -fSL "https://bootstrap.pypa.io/get-pip.py" | python \
+    && pip install --no-cache-dir --upgrade pip==${PYTHON_PIP_VERSION} \
+    && pip install --no-cache-dir git+https://github.com/confluentinc/confluent-docker-utils@v0.0.20 \
+    && yum remove -y git
+
+echo "===> Adding confluent repository...${CONFLUENT_PACKAGES_REPO}/rpm/${CONFLUENT_MAJOR_VERSION}.${CONFLUENT_MINOR_VERSION}" && \
+    if [ "x${ALLOW_UNSIGNED}" = "xtrue" ]; then \
+        echo "===> GPG signatures are disabled for SNAPSHOT builds..." \
+        && printf "[Confluent.dist] \n\
+name=Confluent repository (dist) \n\
+baseurl=${CONFLUENT_PACKAGES_REPO}/rpm/${CONFLUENT_MAJOR_VERSION}.${CONFLUENT_MINOR_VERSION}/ \n\
+gpgcheck=0 \n\
+enabled=1 \n\
+\n\
+[Confluent] \n\
+name=Confluent repository \n\
+baseurl=${CONFLUENT_PACKAGES_REPO}/rpm/${CONFLUENT_MAJOR_VERSION}.${CONFLUENT_MINOR_VERSION}/ \n\
+gpgcheck=0 \n\
+enabled=1 " > /etc/yum.repos.d/confluent.repo; \
+    else \
+        echo "===> Using Confluent's archive.key..." \
+        && rpm --import ${CONFLUENT_PACKAGES_REPO}/rpm/${CONFLUENT_MAJOR_VERSION}.${CONFLUENT_MINOR_VERSION}/archive.key \
+        && printf "[Confluent.dist] \n\
+name=Confluent repository (dist) \n\
+baseurl=${CONFLUENT_PACKAGES_REPO}/rpm/${CONFLUENT_MAJOR_VERSION}.${CONFLUENT_MINOR_VERSION}/ \n\
+gpgcheck=1 \n\
+gpgkey=${CONFLUENT_PACKAGES_REPO}/rpm/${CONFLUENT_MAJOR_VERSION}.${CONFLUENT_MINOR_VERSION}/archive.key \n\
+enabled=1 \n\
+\n\
+[Confluent] \n\
+name=Confluent repository \n\
+baseurl=${CONFLUENT_PACKAGES_REPO}/rpm/${CONFLUENT_MAJOR_VERSION}.${CONFLUENT_MINOR_VERSION}/ \n\
+gpgcheck=1 \n\
+gpgkey=${CONFLUENT_PACKAGES_REPO}/rpm/${CONFLUENT_MAJOR_VERSION}.${CONFLUENT_MINOR_VERSION}/archive.key \n\
+enabled=1 " > /etc/yum.repos.d/confluent.repo; \
+    fi
+
+CUB_CLASSPATH=/etc/confluent/docker/docker-utils.jar
+
+echo "===> Installing Schema Registry (for Avro jars) ..." \
+	&& yum install -y confluent-schema-registry \
+	&& echo "===> Installing Confluent Hub client ..." \
+	&& yum install -y confluent-hub-client \
+	&& echo "===> Cleaning up ..." \
+	&& rm -rf /tmp/* \
+    && echo "===> Setting up ${COMPONENT} dirs ..." \
+    && mkdir -p /etc/${COMPONENT} /etc/${COMPONENT}/secrets /etc/${COMPONENT}/jars \
+    && chmod -R ag+w /etc/${COMPONENT} /etc/${COMPONENT}/secrets /etc/${COMPONENT}/jars
+
+cp -Rf include/etc/confluent/docker /etc/confluent/docker
+
+echo "===> Installing Elasticsearch connector" \
+	&& yum install -y confluent-kafka-connect-elasticsearch
+	&& echo "===> Cleaning up ..." \
+	&& rm -rf /tmp/*
